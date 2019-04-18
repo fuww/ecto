@@ -324,6 +324,7 @@ defmodule Ecto.Schema do
 
       Module.register_attribute(__MODULE__, :ecto_primary_keys, accumulate: true)
       Module.register_attribute(__MODULE__, :ecto_fields, accumulate: true)
+      Module.register_attribute(__MODULE__, :ecto_query_fields, accumulate: true)
       Module.register_attribute(__MODULE__, :ecto_field_sources, accumulate: true)
       Module.register_attribute(__MODULE__, :ecto_assocs, accumulate: true)
       Module.register_attribute(__MODULE__, :ecto_embeds, accumulate: true)
@@ -405,6 +406,7 @@ defmodule Ecto.Schema do
       autogenerate = @ecto_autogenerate |> Enum.reverse
       autoupdate = @ecto_autoupdate |> Enum.reverse
       fields = @ecto_fields |> Enum.reverse
+      query_fields = @ecto_query_fields |> Enum.reverse
       field_sources = @ecto_field_sources |> Enum.reverse
       assocs = @ecto_assocs |> Enum.reverse
       embeds = @ecto_embeds |> Enum.reverse
@@ -412,7 +414,7 @@ defmodule Ecto.Schema do
       Module.eval_quoted __ENV__, [
         Ecto.Schema.__defstruct__(@struct_fields),
         Ecto.Schema.__changeset__(@changeset_fields),
-        Ecto.Schema.__schema__(prefix, source, fields, primary_key_fields),
+        Ecto.Schema.__schema__(prefix, source, fields, query_fields, primary_key_fields),
         Ecto.Schema.__types__(fields, field_sources),
         Ecto.Schema.__dumper__(fields, field_sources),
         Ecto.Schema.__loader__(fields, field_sources),
@@ -455,7 +457,11 @@ defmodule Ecto.Schema do
       `:read_after_writes`.
 
     * `:primary_key` - When true, the field is used as part of the
-      composite primary key
+      composite primary key.
+
+    * `:load_in_query` - When false, the field will not be loaded when
+      selecting the whole struct in a query, such as `from p in Post, select: p`.
+      Defaults to `true`.
 
   """
   defmacro field(name, type \\ :string, opts \\ []) do
@@ -1541,6 +1547,10 @@ defmodule Ecto.Schema do
         Module.put_attribute(mod, :ecto_primary_keys, name)
       end
 
+      if Keyword.get(opts, :load_in_query, true) do
+        Module.put_attribute(mod, :ecto_query_fields, {name, type})
+      end
+
       Module.put_attribute(mod, :ecto_fields, {name, type})
     end
   end
@@ -1681,20 +1691,22 @@ defmodule Ecto.Schema do
   end
 
   @doc false
-  def __schema__(prefix, source, fields, primary_key) do
+  def __schema__(prefix, source, fields, query_fields, primary_key) do
     field_names = Enum.map(fields, &elem(&1, 0))
+    query_field_names = Enum.map(query_fields, &elem(&1, 0))
 
     # Hash is used by the query cache to specify
     # the underlying schema structure did not change.
     # We don't include the source because the source
     # is already part of the query cache itself.
-    hash = :erlang.phash2({primary_key, fields})
+    hash = :erlang.phash2({primary_key, query_fields})
 
     quote do
       def __schema__(:query),       do: %Ecto.Query{from: {unquote(source), __MODULE__}, prefix: unquote(prefix)}
       def __schema__(:prefix),      do: unquote(prefix)
       def __schema__(:source),      do: unquote(source)
       def __schema__(:fields),      do: unquote(field_names)
+      def __schema__(:query_fields), do: unquote(query_field_names)
       def __schema__(:primary_key), do: unquote(primary_key)
       def __schema__(:hash),        do: unquote(hash)
     end

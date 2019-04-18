@@ -1093,7 +1093,7 @@ defmodule Ecto.Query.Planner do
         {{:value, :map}, [{:&, [], [ix]}]}
 
       {:error, {_, schema}} ->
-        {types, fields} = select_dump(schema.__schema__(:fields), schema.__schema__(:dump), ix)
+        {types, fields} = select_dump(schema.__schema__(:query_fields), schema.__schema__(:dump), ix)
         {{:source, source, types}, fields}
 
       {:error, {:fragment, _, _}} ->
